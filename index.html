@@ -176,7 +176,12 @@
     <h3>📱 QR de acceso a la consulta</h3>
     <p class="sub">Escanéalo con la cámara del celular para abrir esta página.</p>
     <div id="qrBox"></div>
-    <div class="url-caja" id="urlTexto"></div>
+    <div style="margin-top:14px">
+  <div style="font-size:.72rem;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#64748b;margin-bottom:6px;text-align:left">
+    📎 Enlace directo (copiar/compartir)
+  </div>
+  <div class="url-caja" id="urlTexto" style="font-size:.82rem;color:#0f2a5c;font-weight:600;user-select:all;cursor:text"></div>
+</div>
     <div class="acciones-qr">
       <button class="btn btn-gris" id="btnCerrarQR">Cerrar</button>
       <button class="btn btn-gris" id="btnCopiar">🔗 Copiar</button>
@@ -641,47 +646,73 @@ function generarQR(){
   var caja = document.getElementById('qrBox');
   caja.innerHTML = '';
 
-  try {
-    // ✅ QR con negro puro, corrección media y 400px (más legible)
-    new QRCode(caja, {
-      text: url,
-      width: 400,
-      height: 400,
-      colorDark: '#000000',      // ← negro puro
-      colorLight: '#FFFFFF',
-      correctLevel: QRCode.CorrectLevel.M   // ← nivel medio, menos denso
-    });
+  // ✅ MÉTODO 1: Generar QR con servicio externo (más confiable)
+  var img = document.createElement('img');
+  img.alt = 'QR de acceso';
+  img.style.width = '280px';
+  img.style.height = '280px';
+  img.style.borderRadius = '8px';
+  img.crossOrigin = 'anonymous';
+  img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=10&data=' + encodeURIComponent(url);
 
-    // Limitar tamaño visual en pantalla (el canvas interno es 400x400)
-    var cv = caja.querySelector('canvas');
-    if (cv){ cv.style.width = '260px'; cv.style.height = '260px'; }
-    var im = caja.querySelector('img');
-    if (im){ im.style.width = '260px'; im.style.height = '260px'; }
+  img.onerror = function(){
+    // Si el servicio externo falla, usa la librería local
+    console.warn('⚠️ Servicio externo falló, usando librería local');
+    caja.innerHTML = '';
+    try {
+      new QRCode(caja, {
+        text: url,
+        width: 400, height: 400,
+        colorDark: '#000000',
+        colorLight: '#FFFFFF',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+      var cv = caja.querySelector('canvas');
+      if (cv){ cv.style.width = '280px'; cv.style.height = '280px'; }
+    } catch(e){
+      caja.innerHTML = '<p style="font-size:.85rem;color:#b91c1c;padding:20px">No se pudo generar el QR. Usa el enlace de abajo.</p>';
+    }
+  };
 
-  } catch(err){
-    caja.innerHTML = '<p style="font-size:.8rem;color:#b91c1c">No se pudo generar el QR.</p>';
-  }
+  caja.appendChild(img);
+
+  // ✅ Abrir el modal
+  document.getElementById('btnAbrirQR').addEventListener('click', generarQR);
 }
 
 document.getElementById('btnDescargar').addEventListener('click', function(){
+  var img    = document.querySelector('#qrBox img');
   var canvas = document.querySelector('#qrBox canvas');
-  if (!canvas){ toast('Primero genere el QR'); return; }
 
-  // Redibujar en un canvas de 800x800 para máxima calidad al imprimir
-  var grande = document.createElement('canvas');
-  grande.width = 800;
-  grande.height = 800;
-  var ctx = grande.getContext('2d');
-  ctx.imageSmoothingEnabled = false;   // pixelado nítido
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, 800, 800);
-  ctx.drawImage(canvas, 0, 0, 800, 800);
+  if (img && img.src && img.src.indexOf('qrserver') !== -1){
+    // Descargar desde el servicio externo en alta resolución
+    var grande = img.src.replace('size=500x500', 'size=1000x1000');
+    var a = document.createElement('a');
+    a.download = 'QR-consulta-estibas.png';
+    a.href = grande;
+    a.target = '_blank';
+    a.click();
+    toast('QR abriéndose en nueva pestaña · clic derecho → Guardar imagen ✓');
+    return;
+  }
 
-  var a = document.createElement('a');
-  a.download = 'QR-consulta-estibas.png';
-  a.href = grande.toDataURL('image/png');
-  a.click();
-  toast('QR descargado a 800x800 ✓');
+  if (canvas){
+    var gc = document.createElement('canvas');
+    gc.width = 800; gc.height = 800;
+    var ctx = gc.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, 800, 800);
+    ctx.drawImage(canvas, 0, 0, 800, 800);
+    var a2 = document.createElement('a');
+    a2.download = 'QR-consulta-estibas.png';
+    a2.href = gc.toDataURL('image/png');
+    a2.click();
+    toast('QR descargado ✓');
+    return;
+  }
+
+  toast('Primero genere el QR');
 });
 
 document.getElementById('btnDescargar').addEventListener('click', function(){
