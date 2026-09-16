@@ -640,33 +640,48 @@ function generarQR(){
   document.getElementById('urlTexto').textContent = url;
   var caja = document.getElementById('qrBox');
   caja.innerHTML = '';
+
   try {
+    // ✅ QR con negro puro, corrección media y 400px (más legible)
     new QRCode(caja, {
-      text: url, width: 250, height: 250,
-      colorDark: '#0f2a5c', colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.H
+      text: url,
+      width: 400,
+      height: 400,
+      colorDark: '#000000',      // ← negro puro
+      colorLight: '#FFFFFF',
+      correctLevel: QRCode.CorrectLevel.M   // ← nivel medio, menos denso
     });
+
+    // Limitar tamaño visual en pantalla (el canvas interno es 400x400)
+    var cv = caja.querySelector('canvas');
+    if (cv){ cv.style.width = '260px'; cv.style.height = '260px'; }
+    var im = caja.querySelector('img');
+    if (im){ im.style.width = '260px'; im.style.height = '260px'; }
+
   } catch(err){
     caja.innerHTML = '<p style="font-size:.8rem;color:#b91c1c">No se pudo generar el QR.</p>';
   }
 }
 
-document.getElementById('btnAbrirQR').addEventListener('click', function(){
-  generarQR();
-  overlay.classList.add('activo');
-});
-document.getElementById('btnCerrarQR').addEventListener('click', function(){ overlay.classList.remove('activo'); });
-overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.classList.remove('activo'); });
-document.addEventListener('keydown', function(e){ if (e.key === 'Escape') overlay.classList.remove('activo'); });
+document.getElementById('btnDescargar').addEventListener('click', function(){
+  var canvas = document.querySelector('#qrBox canvas');
+  if (!canvas){ toast('Primero genere el QR'); return; }
 
-document.getElementById('btnCopiar').addEventListener('click', function(){
-  var url = urlPagina();
-  if (navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(url).then(function(){ toast('Enlace copiado ✓'); })
-                                        .catch(function(){ toast('No se pudo copiar'); });
-  } else {
-    toast('Copia manual: ' + url);
-  }
+  // Redibujar en un canvas de 800x800 para máxima calidad al imprimir
+  var grande = document.createElement('canvas');
+  grande.width = 800;
+  grande.height = 800;
+  var ctx = grande.getContext('2d');
+  ctx.imageSmoothingEnabled = false;   // pixelado nítido
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, 800, 800);
+  ctx.drawImage(canvas, 0, 0, 800, 800);
+
+  var a = document.createElement('a');
+  a.download = 'QR-consulta-estibas.png';
+  a.href = grande.toDataURL('image/png');
+  a.click();
+  toast('QR descargado a 800x800 ✓');
 });
 
 document.getElementById('btnDescargar').addEventListener('click', function(){
