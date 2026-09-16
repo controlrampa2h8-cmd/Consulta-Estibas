@@ -197,7 +197,7 @@ var CONFIG = {
   // Clave de versión para forzar invalidación del caché local.
   // 👉 Súbela (v1 → v2 → v3…) cada vez que edites el JSON
   //    para que los usuarios reciban los cambios al instante.
-  cacheVersion: 'v3',
+  cacheVersion: 'v4',
   // Tiempo de vida del caché local en milisegundos (1 día).
   cacheTTL: 24 * 60 * 60 * 1000,
   // Timeout de la petición fetch (ms)
@@ -252,27 +252,65 @@ function escribirCache(data){
 
 function fetchConTimeout(url, ms){
   return new Promise(function(resolve, reject){
+    var xhr = new XMLHttpRequest();
+    var terminado = false;
+
     var timer = setTimeout(function(){
-      reject(new Error('timeout'));
+      if (terminado) return;
+      terminado = true;
+      try { xhr.abort(); } catch(e){}
+      reject(new Error('timeout tras ' + ms + 'ms'));
     }, ms);
 
-    fetch(url, { cache: 'default' })
-      .then(function(r){
-        clearTimeout(timer);
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(resolve)
-      .catch(function(err){
-        clearTimeout(timer);
-        reject(err);
-      });
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+
+    xhr.onreadystatechange = function(){
+      if (xhr.readyState !== 4) return;
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timer);
+
+      console.log('📡 XHR status:', xhr.status, '· URL:', url);
+      console.log('📡 Content-Type:', xhr.getResponseHeader('Content-Type'));
+
+      if (xhr.status >= 200 && xhr.status < 300){
+        try {
+          var data = JSON.parse(xhr.responseText);
+          console.log('📡 JSON parseado. Registros:', data && data.registros ? data.registros.length : 'sin campo registros');
+          resolve(data);
+        } catch(e){
+          console.error('❌ JSON inválido:', e.message);
+          console.error('❌ Primeros 200 caracteres:', xhr.responseText.substring(0, 200));
+          reject(new Error('JSON inválido: ' + e.message));
+        }
+      } else {
+        console.error('❌ HTTP error:', xhr.status, xhr.statusText);
+        reject(new Error('HTTP ' + xhr.status));
+      }
+    };
+
+    xhr.onerror = function(){
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timer);
+      console.error('❌ Error de red en XHR');
+      reject(new Error('Error de red'));
+    };
+
+    xhr.send();
+  });
   });
 }
 
 function cargarDatos(){
   var cache = leerCache();
   var cacheFresco = cache && (Date.now() - cache.guardado) < CONFIG.cacheTTL;
+
+  // URL con doble anti-caché
+  var urlFetch = CONFIG.dataUrl + '?v=' + CONFIG.cacheVersion + '&t=' + Date.now();
+  console.log('🔎 Iniciando carga desde:', urlFetch);
+  console.log('🔎 Caché local disponible:', cache ? cache.registros.length + ' registros' : 'ninguna');
 
   // 1) Si hay caché fresco → úsalo YA (sin bloquear la interfaz)
   if (cacheFresco){
@@ -282,9 +320,10 @@ function cargarDatos(){
     actualizarEstado('ok', 'Datos actualizados: ' + (cache.actualizado || 'reciente') + ' · caché local');
 
     // Refrescar en segundo plano
-    fetchConTimeout(CONFIG.dataUrl + '?v=' + CONFIG.cacheVersion, CONFIG.fetchTimeout)
+    fetchConTimeout(urlFetch, CONFIG.fetchTimeout)
       .then(function(fresh){
         if (fresh && fresh.registros && fresh.registros.length){
+          console.log('✅ Refresco OK. Nuevos registros:', fresh.registros.length);
           DATOS = fresh.registros;
           DATOS_LISTOS = true;
           escribirCache(fresh);
@@ -292,34 +331,38 @@ function cargarDatos(){
           actualizarEstado('ok', 'Datos actualizados: ' + (fresh.actualizado || 'hoy'));
         }
       })
-      .catch(function(){ /* seguimos con la caché */ });
+      .catch(function(err){
+        console.error('⚠️ Refresco en segundo plano falló:', err.message);
+      });
     return;
   }
 
   // 2) Sin caché fresca → intentar fetch bloqueante (con fallback)
   actualizarEstado('cargando', 'Cargando base de datos…');
 
-  fetchConTimeout(CONFIG.dataUrl + '?v=' + CONFIG.cacheVersion, CONFIG.fetchTimeout)
+  fetchConTimeout(urlFetch, CONFIG.fetchTimeout)
     .then(function(fresh){
       if (fresh && fresh.registros && fresh.registros.length){
+        console.log('✅ Carga inicial OK. Registros:', fresh.registros.length);
         DATOS = fresh.registros;
         escribirCache(fresh);
         actualizarEstado('ok', 'Datos actualizados: ' + (fresh.actualizado || 'hoy'));
       } else {
+        console.warn('⚠️ JSON sin campo registros o vacío');
         DATOS = (cache && cache.registros) || DATOS_EMBEBIDOS;
         actualizarEstado('off', 'Usando datos en caché');
       }
       DATOS_LISTOS = true;
       actualizarDatalist();
     })
-    .catch(function(){
+    .catch(function(err){
+      console.error('❌ Fallo total de carga:', err.message);
       DATOS = (cache && cache.registros) || DATOS_EMBEBIDOS;
       DATOS_LISTOS = true;
       actualizarDatalist();
       actualizarEstado('off', 'Sin conexión · usando datos locales');
     });
 }
-
 function actualizarDatalist(){
   var vistos = {}, clientes = [], i;
   for (i = 0; i < DATOS.length; i++){
