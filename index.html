@@ -192,15 +192,9 @@
    ⚙️ CONFIGURACIÓN
    ========================================================= */
 var CONFIG = {
-  // URL del JSON en el mismo repo (ruta relativa).
   dataUrl: 'Data.json',
-  // Clave de versión para forzar invalidación del caché local.
-  // 👉 Súbela (v1 → v2 → v3…) cada vez que edites el JSON
-  //    para que los usuarios reciban los cambios al instante.
   cacheVersion: 'v4',
-  // Tiempo de vida del caché local en milisegundos (1 día).
   cacheTTL: 24 * 60 * 60 * 1000,
-  // Timeout de la petición fetch (ms)
   fetchTimeout: 8000
 };
 
@@ -210,7 +204,7 @@ function urlPagina(){
 }
 
 /* =========================================================
-   📦 DATOS EMBEBIDOS (fallback si no hay red ni caché)
+   📦 DATOS EMBEBIDOS (fallback mínimo)
    ========================================================= */
 var DATOS_EMBEBIDOS = [
   {cliente:"1.11111E+48", destino:"A & G INDUSTRIAS PERUANA S.A.C.", zona:"LIMA", direccion:"AV. CIRCUNVALACION MZ K LT 8 D1", cubaje:"DE 10 A 25"},
@@ -247,9 +241,10 @@ function escribirCache(data){
       registros: data.registros,
       guardado: Date.now()
     }));
-  } catch(e){ /* localStorage lleno o deshabilitado — no pasa nada */ }
+  } catch(e){ /* localStorage lleno o deshabilitado */ }
 }
 
+/* ✅ CORREGIDO: se eliminó el "});" extra que rompía el script */
 function fetchConTimeout(url, ms){
   return new Promise(function(resolve, reject){
     var xhr = new XMLHttpRequest();
@@ -272,7 +267,6 @@ function fetchConTimeout(url, ms){
       clearTimeout(timer);
 
       console.log('📡 XHR status:', xhr.status, '· URL:', url);
-      console.log('📡 Content-Type:', xhr.getResponseHeader('Content-Type'));
 
       if (xhr.status >= 200 && xhr.status < 300){
         try {
@@ -300,26 +294,22 @@ function fetchConTimeout(url, ms){
 
     xhr.send();
   });
-  });
 }
 
 function cargarDatos(){
   var cache = leerCache();
   var cacheFresco = cache && (Date.now() - cache.guardado) < CONFIG.cacheTTL;
 
-  // URL con doble anti-caché
   var urlFetch = CONFIG.dataUrl + '?v=' + CONFIG.cacheVersion + '&t=' + Date.now();
   console.log('🔎 Iniciando carga desde:', urlFetch);
-  console.log('🔎 Caché local disponible:', cache ? cache.registros.length + ' registros' : 'ninguna');
+  console.log('🔎 Caché local:', cache ? cache.registros.length + ' registros' : 'ninguna');
 
-  // 1) Si hay caché fresco → úsalo YA (sin bloquear la interfaz)
   if (cacheFresco){
     DATOS = cache.registros;
     DATOS_LISTOS = true;
     actualizarDatalist();
     actualizarEstado('ok', 'Datos actualizados: ' + (cache.actualizado || 'reciente') + ' · caché local');
 
-    // Refrescar en segundo plano
     fetchConTimeout(urlFetch, CONFIG.fetchTimeout)
       .then(function(fresh){
         if (fresh && fresh.registros && fresh.registros.length){
@@ -337,7 +327,6 @@ function cargarDatos(){
     return;
   }
 
-  // 2) Sin caché fresca → intentar fetch bloqueante (con fallback)
   actualizarEstado('cargando', 'Cargando base de datos…');
 
   fetchConTimeout(urlFetch, CONFIG.fetchTimeout)
@@ -363,6 +352,7 @@ function cargarDatos(){
       actualizarEstado('off', 'Sin conexión · usando datos locales');
     });
 }
+
 function actualizarDatalist(){
   var vistos = {}, clientes = [], i;
   for (i = 0; i < DATOS.length; i++){
@@ -610,17 +600,11 @@ function ejecutarConsulta(){
   var cliente = document.getElementById('inCliente').value.trim();
   if (!cliente){ toast('Escriba el cliente'); return; }
 
-  if (!DATOS_LISTOS && DATOS.length === 0){
-    toast('Cargando datos, intente en un momento…');
-    return;
-  }
-
   consultando = true;
   var btn = document.getElementById('btnConsultar');
   btn.disabled = true;
   btn.textContent = '⏳ Consultando…';
 
-  // setTimeout 0 para liberar el hilo antes del render
   setTimeout(function(){
     var res = buscarCliente(cliente);
     if (res.estado === 'ok') mostrarCliente(res.cliente, res.registros);
@@ -663,7 +647,7 @@ function generarQR(){
       correctLevel: QRCode.CorrectLevel.H
     });
   } catch(err){
-    caja.innerHTML = '<p style="font-size:.8rem;color:#b91c1c">No se pudo generar el QR (revise la conexión a internet).</p>';
+    caja.innerHTML = '<p style="font-size:.8rem;color:#b91c1c">No se pudo generar el QR.</p>';
   }
 }
 
